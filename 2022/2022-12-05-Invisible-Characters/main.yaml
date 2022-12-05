@@ -1,0 +1,66 @@
+---
+- name: INTRO
+  voice: Hi there, welcome to all things code. In this video, I'm gonna explain invisible unicode characters.
+  write: |-
+    Invisible Unicode Characters
+
+    by All Things Code
+- name: Overview
+  voice: In Unicode, some characters are invisible.
+  diagram: |-
+    digraph G {
+      Characters -> Visible;
+      Characters -> InVisible;
+    }
+- name: Space
+  voice: The most common used invisible character you see everyday is the regular white-space character.
+  write: |-
+    Most common used invisible character
+
+    WHITESPACE
+- name: Space-Unicode
+  voice: Its unicode is U plus zero zero two zero.
+  write: "U+0020 SPACE"
+- name: MoreExamples
+  voice: But there are more invisible unicode characters you can use.
+  write: |-
+    U+034F COMBINING GRAPHEME JOINER	
+    U+061C ARABIC LETTER MARK	
+    U+115F HANGUL CHOSEONG FILLER	
+    U+1160 HANGUL JUNGSEONG FILLER
+    ...
+- name: MoreExamples-2
+  voice: Just name a few, you can use U plus three one six four of the Korean Hangual alphabet for the white-space.
+  write: "U+3164 HANGUL FILLER"
+- name: Tricky
+  voice: Invisible Characters are tricky for programmers because they cannot be easily filtered using regular expression slash S.
+  code-language: javascript
+  code: |-
+    >>> /\s/.test(' ')
+    true
+    >>> /\s/.test('\u3164')
+    false
+- name: Tricky-2
+  voice: Even you use more advanced Unicode Category Space Separator, it cannot cover all because not all invisible characters are space separators.
+  write: "\\p{Zs} # this is not fully working"
+- name: Fun
+  voice: This means you can use it for fun in some applications.
+  write: "Fun!"
+- name: AmongUs
+  voice: You can copy the HANGUL FILLER character when naming your player in the game to trick the other players.
+  image: ./among-us.svg
+  image-size: 2
+- name: HowToType
+  voice: In regards to how to type them, the easiest way is to copy one from invisible characters dot com.
+  write: "invisible-characters.com"
+- name: Ending
+  voice: I hope this video gives you some inspirations on invisible characters, regardless you are a programmer or non-tech users.
+  write: |-
+    Programmer
+    Non-Tech User
+- name: Ending
+  voice: Thanks for watching, and don't forget to like and subscribe for more videos from All Things Code.
+  write: |
+    Like & Subscribe
+
+    Youtube Channel: All Things Code
