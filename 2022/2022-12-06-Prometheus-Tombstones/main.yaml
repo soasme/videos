@@ -1,0 +1,182 @@
+---
+- name: INTRO
+  voice: Hi there, welcome to all things code. In this video, I'm gonna explain prometheus tombstones.
+  write: |-
+    Prometheus Tombstones
+
+    by All Things Code
+- name: Overview
+  voice: In Prometheus, when you delete series via the API, deletion records are stored in separate tombstone files.
+  write: |-
+    In Prometheus, when you delete series
+    via the API, deletion records are
+    stored in separate tombstone files.
+- name: Why
+  voice: This helps Prometheus to handle series deletion without fluctuating the system I/O.
+  write: |-
+    Why tombestone?
+
+    Reduced disk I/O fluctuation.
+- name: Tombstone File Place
+  _ref: https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/tombstones.md
+  voice: The tombstone file is placed at the top level directory of a block.
+  write: |-
+    ├── 01BKGV7JC0RY8A6MACW02A2PJD
+    │   ├── chunks
+    │   │   └── 000001
+    │   ├── tombstones
+    │   ├── index
+    │   └── meta.json
+- name: Tombstone File Format
+  _ref: https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/tombstones.md
+  voice: The tombstone file starts with fixed four bytes as magic identifier, followed by one byte for version. Each tombstone record consists of the reference to the series and the time range of the series. The tombstone file ends with eight bytes specifying the offset to the start of  Stones section. 
+  diagram: |-
+    digraph G {
+      graph [fontname = "Handlee"];
+      node [fontname = "Handlee" shape=record];
+      edge [fontname = "Handlee"];
+      tombstone [label="{{0x0130BA30|VERSION}|{SeriesRef|MinT|MaxT}|...| CRC}"]
+    }
+- name: Code Intro
+  _ref: https://github.com/prometheus/prometheus/blob/release-2.40/tsdb/tombstones/tombstones.go
+  voice: Let's look at the tombstones in Prometheus source code.
+  write: |-
+    repo: github.com/prometheus/prometheus
+    file: tsdb/tombstones/tombstones.go
+- name: Constants
+  voice: The tombstone code starts with a few constants. The filename is always tombstones. The first four bytes is always 0 x 0 1 3 0 B A 3 0.
+  code-language: go
+  code: |-
+    const TombstonesFilename = "tombstones"
+
+    const (
+            // MagicTombstone is 4 bytes at the head of a tombstone file.
+            MagicTombstone = 0x0130BA30
+    
+            tombstoneFormatV1          = 1
+            tombstoneFormatVersionSize = 1
+            tombstonesHeaderSize       = 5
+            tombstonesCRCSize          = 4
+    )
+- name: Create tmp file.
+  voice: When writing a tombstone file, it first creates a temporary file.
+  code-language: go
+  code: |-
+    func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
+        path := filepath.Join(dir, TombstonesFilename)
+        tmp := path + ".tmp"
+        hash := newCRC32()
+        var size int
+
+        f, err := os.Create(tmp)
+        if err != nil {
+            return 0, err
+        }
+- name: Write Magic Tombstone
+  voice: It then write the four bytes magic tombstone constant to the file at the start.
+  code-language: go
+  code: |-
+    buf := encoding.Encbuf{B: make([]byte, 3*binary.MaxVarintLen64)}
+    buf.Reset()
+    // Write the meta.
+    buf.PutBE32(MagicTombstone)
+    n, err := f.Write(buf.Get())
+- name: Write tombstone records
+  voice: Next, it serializes the tombstone format version to a buffer along with all series references and intervals one by one.
+  code-language: go
+  code: |-
+    buf := encoding.Encbuf{}
+    buf.PutByte(tombstoneFormatV1)
+    err := tr.Iter(func(ref storage.SeriesRef, ivs Intervals) error {
+      for _, iv := range ivs {
+          buf.PutUvarint64(uint64(ref))
+          buf.PutVarint64(iv.Mint)
+          buf.PutVarint64(iv.Maxt)
+      }
+      return nil
+    })
+- name: Write hash
+  voice: After writing the buffer to the temporary file, a checksum of content is appended.
+  code-language: go
+  code: |-
+    // Ignore first byte which is the format type. We do this for compatibility.
+    if _, err := hash.Write(bytes[tombstoneFormatVersionSize:]); err != nil {
+        return 0, errors.Wrap(err, "calculating hash for tombstones")
+    }
+
+    n, err = f.Write(bytes)
+    if err != nil {
+        return 0, errors.Wrap(err, "writing tombstones")
+    }
+    size += n
+
+    n, err = f.Write(hash.Sum(nil))
+    if err != nil {
+      return 0, err
+    }
+    size += n
+- name: Complete
+  voice: Finally, it flush all bytes to the disk and rename the temporary file to the final tombstone file.
+  code-language: go
+  code: |-
+    if err := f.Sync(); err != nil {
+        return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+    }
+
+    if err = f.Close(); err != nil {
+        return 0, err
+    }
+    f = nil
+    return int64(size), fileutil.Replace(tmp, path)
+- name: HowToIgnore
+  voice: Okay. Now we know how Prometheus generates such a tombstone file. Let's see how it ignores chunks when you query data.
+  write: |-
+    repo: github.com/prometheus/prometheus
+    file: tsdb/querier.go
+- name: GetTombstoneIntervals
+  voice: When the db cursor is scanning the data block, Prometheus attempts to get all intervals from the tombstone file.
+  code-language: go
+  code: |-
+    func (b *blockBaseSeriesSet) Next() bool {
+        // ...
+        intervals, err := b.tombstones.Get(b.p.At())
+        if err != nil {
+            b.err = errors.Wrap(err, "get tombstones")
+            return false
+        }
+- name: FilterOut
+  voice: Next, it does not append the data chunk if those chunks are within the tombstone range.
+  code-language: go
+  code: |-
+    // Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.
+    for _, chk := range b.bufChks {
+        if chk.MaxTime < b.mint {
+            continue
+        }
+        if chk.MinTime > b.maxt {
+            continue
+        }
+
+        if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(intervals)) {
+            chks = append(chks, chk)
+        }
+
+        // If still not entirely deleted, check if trim is needed based on requested time range.
+        if !b.disableTrimming {
+            if chk.MinTime < b.mint {
+                trimFront = true
+            }
+            if chk.MaxTime > b.maxt {
+                trimBack = true
+            }
+        }
+    }
+- name: Ending-1
+  voice: I hope this video gives you some ideas on how Prometheus tombstones works and inspires you to deal with similar scenarios in your code.
+  image: ./brainstorming.png
+- name: Ending-2
+  voice: Thanks for watching, and don't forget to like and subscribe for more videos from All Things Code.
+  write: |
+    Like & Subscribe
+
+    Youtube Channel: All Things Code
